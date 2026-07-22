@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mainframe Terminal</title>
+    <style>
+        :root {
+            --term-color: #00ff33;
+            --term-bg: #050505;
+            --term-glow: 0 0 10px rgba(0, 255, 51, 0.7);
+            --font-main: 'Courier New', Courier, monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body, html {
+            height: 100%;
+            width: 100%;
+            background-color: var(--term-bg);
+            color: var(--term-color);
+            font-family: var(--font-main);
+            overflow: hidden;
+            font-size: 1.2rem;
+        }
+
+        /* CRT Scanline Effect */
+        body::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            );
+            background-size: 100% 4px;
+            z-index: 100;
+            pointer-events: none; /* Allows clicking through scanlines */
+        }
+
+        /* Slight vignette for monitor feel */
+        body::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,0,0,0.6) 100%);
+            z-index: 99;
+            pointer-events: none;
+        }
+
+        #terminal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+            overflow-y: hidden; /* Hide scrollbar for cinematic look */
+            text-shadow: var(--term-glow);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            z-index: 10;
+        }
+
+        .line {
+            margin-bottom: 2px;
+            line-height: 1.2;
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 10px;
+            height: 1.2rem;
+            background-color: var(--term-color);
+            animation: blink 1s step-end infinite;
+            vertical-align: bottom;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        #modal-overlay {
+            display: none; /* Hidden by default */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 5, 0.85);
+            z-index: 200;
+            backdrop-filter: blur(2px);
+        }
+
+        #modal-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 2px solid var(--term-color);
+            padding: 40px 60px;
+            text-align: center;
+            background: var(--term-bg);
+            box-shadow: 0 0 30px rgba(0, 255, 51, 0.4), inset 0 0 20px rgba(0, 255, 51, 0.2);
+        }
+
+        #modal-box h1 {
+            font-size: 3rem;
+            margin-bottom: 30px;
+            letter-spacing: 5px;
+            text-shadow: 0 0 15px var(--term-color);
+            animation: glitch-anim 2s infinite linear alternate-reverse;
+        }
+
+        @keyframes glitch-anim {
+            0% { text-shadow: 2px 0 0 red, -2px 0 0 blue; }
+            5% { text-shadow: -2px 0 0 red, 2px 0 0 blue; }
+            10%, 100% { text-shadow: 0 0 15px var(--term-color); }
+        }
+
+        .options {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+
+        .btn {
+            font-family: var(--font-main);
+            font-size: 2rem;
+            color: var(--term-color);
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 10px 20px;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            text-shadow: var(--term-glow);
+        }
+
+        .btn:hover, .btn.active {
+            background: var(--term-color);
+            color: var(--term-bg);
+            border: 1px solid var(--term-color);
+            box-shadow: 0 0 20px var(--term-color);
+        }
+
+        /* Utility class for critical text */
+        .text-critical {
+            color: #ff3333;
+            text-shadow: 0 0 10px rgba(255, 51, 51, 0.8);
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="terminal"></div>
+
+    <div id="modal-overlay">
+        <div id="modal-box">
+            <h1>PROCEED?</h1>
+            <div class="options">
+                <button class="btn" id="btn-yes">[ YES ]</button>
+                <button class="btn" id="btn-no">[ NO ]</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const terminal = document.getElementById('terminal');
+        const overlay = document.getElementById('modal-overlay');
+        const btnYes = document.getElementById('btn-yes');
+        const btnNo = document.getElementById('btn-no');
+        
+        let hackingInterval;
+        let isModalOpen = false;
+
+        // Realistic-looking fake logs for the cinematic effect
+        const logSnippets = [
+            "Initializing root access...",
+            "Bypassing mainframe firewall... [OK]",
+            "Decrypting RSA-2048 keys...",
+            "Establishing connection on port 443...",
+            "Loading exploit payload [||||||||||||||||||] 100%",
+            "Injecting shellcode...",
+            "TCP SYN flood initiated...",
+            "Ping sweep complete. 4 hosts up.",
+            "chmod 777 /etc/passwd",
+            "cat /var/log/auth.log | grep root",
+            "Establishing reverse shell...",
+            "Data exfiltration in progress...",
+            "WARNING: Intrusion Detection System alert bypassed.",
+            "0x9A4F 0x22B1 0x0000 0xFFFF 0x00A1",
+            "Memory dump starting..."
+        ];
+
+        // Random hex generator for filler text
+        function getRandomHex() {
+            let hex = "";
+            for(let i=0; i<8; i++) {
+                hex += Math.floor(Math.random()*16).toString(16).toUpperCase();
+            }
+            return "0x" + hex;
+        }
+
+        // Add text to the terminal
+        function addTerminalLine(text, isCritical = false) {
+            const line = document.createElement('div');
+            line.className = 'line';
+            if (isCritical) {
+                line.classList.add('text-critical');
+            }
+            line.textContent = `> ${text}`;
+            terminal.appendChild(line);
+
+            // Keep only the last 50 lines to prevent DOM bloat and lag
+            while (terminal.childNodes.length > 50) {
+                terminal.removeChild(terminal.firstChild);
+            }
+            
+            // Auto scroll to bottom (simulated by appending to the bottom)
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        function simulateHacking() {
+            hackingInterval = setInterval(() => {
+                // Random bursts of speed
+                const burstCount = Math.floor(Math.random() * 3) + 1;
+                
+                for(let i=0; i < burstCount; i++) {
+                    const isHex = Math.random() > 0.6;
+                    if (isHex) {
+                        let hexLine = "";
+                        for(let j=0; j<6; j++) hexLine += getRandomHex() + " ";
+                        addTerminalLine(hexLine);
+                    } else {
+                        const randomSnippet = logSnippets[Math.floor(Math.random() * logSnippets.length)];
+                        addTerminalLine(randomSnippet);
+                    }
+                }
+            }, 150); // Speed of the hacking text (lower is faster)
+        }
+
+        // Start the background effect
+        simulateHacking();
+
+        // Listen for Shift + X
+        document.addEventListener('keydown', (e) => {
+            // Check if Shift is held and key is 'X' or 'x'
+            if (e.shiftKey && e.key.toLowerCase() === 'x') {
+                if (!isModalOpen) {
+                    showModal();
+                }
+            }
+        });
+
+        function showModal() {
+            isModalOpen = true;
+            overlay.style.display = 'block';
+            addTerminalLine(">>> AWAITING USER CONFIRMATION <<<", true);
+        }
+
+        function closeModal() {
+            isModalOpen = false;
+            overlay.style.display = 'none';
+        }
+
+        // Button Click Handlers
+        btnYes.addEventListener('click', () => {
+            closeModal();
+            addTerminalLine(">>> OVERRIDE ACCEPTED. EXECUTING PROTOCOL.", true);
+            addTerminalLine(">>> DEPLOYING PAYLOAD...", true);
+            // Speed up the terminal to simulate action after "Yes"
+            clearInterval(hackingInterval);
+            setInterval(() => {
+                addTerminalLine(getRandomHex() + " " + getRandomHex() + " DATA CORRUPTION");
+            }, 50);
+        });
+
+        btnNo.addEventListener('click', () => {
+            closeModal();
+            addTerminalLine(">>> OPERATION ABORTED. CLOSING CONNECTION.", true);
+            addTerminalLine(">>> SYSTEM SECURED.", false);
+        });
+
+        // Optional: Allow keyboard navigation for Yes/No when modal is open
+        document.addEventListener('keydown', (e) => {
+            if (!isModalOpen) return;
+            
+            if (e.key === 'y' || e.key === 'Y') {
+                btnYes.click();
+            } else if (e.key === 'n' || e.key === 'N') {
+                btnNo.click();
+            }
+        });
+
+        // Add a blinking cursor at the very end
+        const cursorDiv = document.createElement('div');
+        cursorDiv.className = 'cursor';
+        document.body.appendChild(cursorDiv);
+        
+        // Ensure cursor stays at bottom right of text
+        setInterval(() => {
+            if(terminal.lastChild) {
+                terminal.lastChild.appendChild(cursorDiv);
+            }
+        }, 100);
+
+    </script>
+</body>
+</html>
